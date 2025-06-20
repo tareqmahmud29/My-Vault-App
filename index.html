@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Password Vault</title>
+    <meta name="google-signin-client_id" content="321119967617-qpoko8ksc2l79picu19aeim7vrtnue5r.apps.googleusercontent.com">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        
+        #auth-container, #vault-container, #unauthorized-container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-top: 50px;
+            display: none;
+        }
+        
+        #auth-container {
+            display: block;
+            text-align: center;
+        }
+        
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 30px;
+        }
+        
+        .password-entry {
+            background-color: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            transition: all 0.3s ease;
+        }
+        
+        .password-entry:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        
+        button {
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #3367d6;
+        }
+        
+        button.danger {
+            background-color: #ea4335;
+        }
+        
+        button.danger:hover {
+            background-color: #d33426;
+        }
+        
+        button.secondary {
+            background-color: #f1f1f1;
+            color: #333;
+        }
+        
+        button.secondary:hover {
+            background-color: #e0e0e0;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .user-info img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-right: 15px;
+        }
+        
+        .user-details {
+            flex-grow: 1;
+        }
+        
+        .entry-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
+        
+        .show-password {
+            cursor: pointer;
+            color: #4285f4;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
+        
+        #search-bar {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div id="auth-container">
+        <h1>Secure Password Vault</h1>
+        <p>Sign in with Google to access your passwords</p>
+        <div id="g_id_onload"
+             data-client_id="YOUR_CLIENT_ID.apps.googleusercontent.com"
+             data-callback="handleGoogleSignIn"
+             data-auto_prompt="false">
+        </div>
+        <div class="g_id_signin"
+             data-type="standard"
+             data-size="large"
+             data-theme="outline"
+             data-text="sign_in_with"
+             data-shape="rectangular"
+             data-logo_alignment="left">
+        </div>
+    </div>
+
+    <div id="unauthorized-container">
+        <h1>Access Denied</h1>
+        <p>This vault is restricted to authorized users only.</p>
+        <button onclick="signOut()">Sign Out</button>
+    </div>
+
+    <div id="vault-container">
+        <div class="user-info">
+            <img id="user-pic" src="" alt="User profile picture">
+            <div class="user-details">
+                <h2 id="user-name"></h2>
+                <p id="user-email"></p>
+            </div>
+            <button onclick="signOut()">Sign Out</button>
+        </div>
+
+        <input type="text" id="search-bar" placeholder="Search passwords...">
+        
+        <div id="entries-container"></div>
+        
+        <div class="entry-actions">
+            <button onclick="addNewEntry()">+ Add New Password</button>
+            <button onclick="exportPasswords()" class="secondary">Export Passwords</button>
+            <button onclick="importPasswords()" class="secondary">Import Passwords</button>
+        </div>
+    </div>
+
+    <script>
+        // Configuration - Edit these values
+        const AUTHORIZED_USERS = [
+            "tarek29mahmud@gmail.com",
+            "tareqpc29@gmail.com"
+        ];
+        
+        // DOM elements
+        const authContainer = document.getElementById('auth-container');
+        const vaultContainer = document.getElementById('vault-container');
+        const unauthorizedContainer = document.getElementById('unauthorized-container');
+        const entriesContainer = document.getElementById('entries-container');
+        const searchBar = document.getElementById('search-bar');
+        
+        // Current user data
+        let currentUser = null;
+        
+        // Initialize the app
+        function init() {
+            searchBar.addEventListener('input', filterEntries);
+        }
+        
+        // Handle Google Sign-In
+        function handleGoogleSignIn(response) {
+            const user = parseJwt(response.credential);
+            currentUser = user;
+            
+            document.getElementById('user-name').textContent = user.name;
+            document.getElementById('user-email').textContent = user.email;
+            document.getElementById('user-pic').src = user.picture;
+            
+            if (AUTHORIZED_USERS.includes(user.email)) {
+                authContainer.style.display = 'none';
+                unauthorizedContainer.style.display = 'none';
+                vaultContainer.style.display = 'block';
+                loadVault();
+            } else {
+                authContainer.style.display = 'none';
+                vaultContainer.style.display = 'none';
+                unauthorizedContainer.style.display = 'block';
+            }
+        }
+        
+        // Parse JWT token
+        function parseJwt(token) {
+            const base64Url = token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            
+            return JSON.parse(jsonPayload);
+        }
+        
+        // Sign out
+        function signOut() {
+            google.accounts.id.disableAutoSelect();
+            google.accounts.id.revoke(currentUser.email, done => {
+                authContainer.style.display = 'block';
+                vaultContainer.style.display = 'none';
+                unauthorizedContainer.style.display = 'none';
+                entriesContainer.innerHTML = '';
+                currentUser = null;
+            });
+        }
+        
+        
+        // Vault functions
+        function loadVault() {
+            const encryptedVault = localStorage.getItem(`passwordVault_${currentUser.email}`);
+            if (encryptedVault) {
+                try {
+                    const decryptedVault = decryptData(encryptedVault, currentUser.email);
+                    entriesContainer.innerHTML = decryptedVault;
+                    attachEventListeners();
+                } catch (e) {
+                    console.error("Failed to decrypt vault:", e);
+                    entriesContainer.innerHTML = '<p>Could not load your passwords. Please try again.</p>';
+                }
+            } else {
+                entriesContainer.innerHTML = '<p>No passwords stored yet. Add your first password!</p>';
+            }
+        }
+        
+        function saveVault() {
+            const vaultHTML = entriesContainer.innerHTML;
+            const encryptedVault = encryptData(vaultHTML, currentUser.email);
+            localStorage.setItem(`passwordVault_${currentUser.email}`, encryptedVault);
+        }
+        
+        function addNewEntry() {
+            const entryId = Date.now();
+            const entryHTML = `
+                <div class="password-entry" data-entry-id="${entryId}">
+                    <input type="text" class="entry-title" placeholder="Account/Service Name" value="New Password">
+                    <input type="text" class="entry-username" placeholder="Username/Email">
+                    <div style="position: relative;">
+                        <input type="password" class="entry-password" placeholder="Password">
+                        <span class="show-password" onclick="togglePasswordVisibility(this)">Show</span>
+                    </div>
+                    <input type="text" class="entry-url" placeholder="Website URL (optional)">
+                    <textarea class="entry-notes" placeholder="Notes (optional)" rows="2"></textarea>
+                    <div class="entry-actions">
+                        <button onclick="deleteEntry('${entryId}')" class="danger">Delete</button>
+                        <button onclick="generatePassword('${entryId}')" class="secondary">Generate Password</button>
+                    </div>
+                </div>
+            `;
+            
+            if (entriesContainer.firstChild?.textContent?.includes('No passwords')) {
+                entriesContainer.innerHTML = entryHTML;
+            } else {
+                entriesContainer.insertAdjacentHTML('afterbegin', entryHTML);
+            }
+            
+            attachEventListeners();
+            saveVault();
+        }
+        
+        function deleteEntry(entryId) {
+            if (confirm('Are you sure you want to delete this password entry?')) {
+                document.querySelector(`.password-entry[data-entry-id="${entryId}"]`).remove();
+                if (entriesContainer.children.length === 0) {
+                    entriesContainer.innerHTML = '<p>No passwords stored yet. Add your first password!</p>';
+                }
+                saveVault();
+            }
+        }
+        
+        function generatePassword(entryId) {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()';
+            let password = '';
+            for (let i = 0; i < 16; i++) {
+                password += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            
+            const entry = document.querySelector(`.password-entry[data-entry-id="${entryId}"]`);
+            entry.querySelector('.entry-password').value = password;
+            saveVault();
+        }
+        
+        function togglePasswordVisibility(element) {
+            const passwordInput = element.previousElementSibling;
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                element.textContent = 'Hide';
+            } else {
+                passwordInput.type = 'password';
+                element.textContent = 'Show';
+            }
+        }
+        
+        function filterEntries() {
+            const searchTerm = searchBar.value.toLowerCase();
+            const entries = document.querySelectorAll('.password-entry');
+            
+            entries.forEach(entry => {
+                const title = entry.querySelector('.entry-title').value.toLowerCase();
+                const username = entry.querySelector('.entry-username').value.toLowerCase();
+                const matches = title.includes(searchTerm) || username.includes(searchTerm);
+                entry.style.display = matches ? 'block' : 'none';
+            });
+        }
+        
+        function exportPasswords() {
+            if (!entriesContainer.children.length || entriesContainer.firstChild.textContent.includes('No passwords')) {
+                alert('No passwords to export');
+                return;
+            }
+            
+            const entries = [];
+            document.querySelectorAll('.password-entry').forEach(entry => {
+                entries.push({
+                    title: entry.querySelector('.entry-title').value,
+                    username: entry.querySelector('.entry-username').value,
+                    password: entry.querySelector('.entry-password').value,
+                    url: entry.querySelector('.entry-url').value,
+                    notes: entry.querySelector('.entry-notes').value
+                });
+            });
+            
+            const dataStr = JSON.stringify(entries, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+            
+            const exportName = `password_vault_${new Date().toISOString().split('T')[0]}.json`;
+            
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportName);
+            linkElement.click();
+        }
+        
+        function importPasswords() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            
+            input.onchange = e => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = event => {
+                    try {
+                        const importedEntries = JSON.parse(event.target.result);
+                        
+                        if (confirm(`Import ${importedEntries.length} passwords? This will add them to your current vault.`)) {
+                            importedEntries.forEach(entry => {
+                                const entryId = Date.now();
+                                const entryHTML = `
+                                    <div class="password-entry" data-entry-id="${entryId}">
+                                        <input type="text" class="entry-title" placeholder="Account/Service Name" value="${escapeHtml(entry.title || '')}">
+                                        <input type="text" class="entry-username" placeholder="Username/Email" value="${escapeHtml(entry.username || '')}">
+                                        <div style="position: relative;">
+                                            <input type="password" class="entry-password" placeholder="Password" value="${escapeHtml(entry.password || '')}">
+                                            <span class="show-password" onclick="togglePasswordVisibility(this)">Show</span>
+                                        </div>
+                                        <input type="text" class="entry-url" placeholder="Website URL (optional)" value="${escapeHtml(entry.url || '')}">
+                                        <textarea class="entry-notes" placeholder="Notes (optional)" rows="2">${escapeHtml(entry.notes || '')}</textarea>
+                                        <div class="entry-actions">
+                                            <button onclick="deleteEntry('${entryId}')" class="danger">Delete</button>
+                                            <button onclick="generatePassword('${entryId}')" class="secondary">Generate Password</button>
+                                        </div>
+                                    </div>
+                                `;
+                                
+                                entriesContainer.insertAdjacentHTML('afterbegin', entryHTML);
+                            });
+                            
+                            attachEventListeners();
+                            saveVault();
+                            alert('Passwords imported successfully!');
+                        }
+                    } catch (e) {
+                        alert('Error importing passwords: Invalid file format');
+                    }
+                };
+                
+                reader.readAsText(file);
+            };
+            
+            input.click();
+        }
+        
+        // Helper functions
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+        
+        function attachEventListeners() {
+            document.querySelectorAll('.password-entry input, .password-entry textarea').forEach(input => {
+                input.addEventListener('change', saveVault);
+            });
+        }
+        
+        // Encryption functions (simplified for demo - consider using Web Crypto API for production)
+        function encryptData(data, key) {
+            let result = '';
+            for (let i = 0; i < data.length; i++) {
+                result += String.fromCharCode(data.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+            }
+            return btoa(result);
+        }
+        
+        function decryptData(data, key) {
+            const decoded = atob(data);
+            let result = '';
+            for (let i = 0; i < decoded.length; i++) {
+                result += String.fromCharCode(decoded.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+            }
+            return result;
+        }
+        
+        // Initialize the app when loaded
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
